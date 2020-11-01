@@ -389,28 +389,35 @@ function generate_condition_code(ctx::CodeGenContext, edge::Edge, actions::Dict{
     return :($(labelcode) && $(precondcode))
 end
 
-function generate_membership_code(var::Symbol, set::ByteSet)
-    min, max = minimum(set), maximum(set)
-    @assert min isa UInt8 && max isa UInt8
-    if max - min + 1 == length(set)
-        # contiguous
-        if min == max
-            return :($(var) == $(min))
-        else
-            return :($(var) in $(min:max))
-        end
-    elseif max - min + 1 ≤ 64 && all(b - min ≥ max for b in 0x00:0xff if b < min)
-        # storable in a 64-bit bitmap
+function membership_element_code(sym::Symbol, x::ByteSet)
+    if length(x) == 1
+        return (1, :($sym == $(minimum(x))))
+    elseif iscontiguous(x)
+        return (2, :(in($sym, $(minimum(x)):$(maximum(x)))))
+    elseif maximum(x)-minimum(x) < 64
+        min = minimum(x)
         bitmap = UInt64(0)
-        for x in set
-            bitmap |= UInt64(1) << (x - min)
+        for i in x
+            bitmap |= UInt64(1) << (i - min)
         end
-        return :(($(UInt64(1)) << ($(var) - $(min))) & $(bitmap) != 0)
+        return (3, :(UInt64(1) & ($bitmap >>> ($sym - $min)) == UInt64(1)))
     else
-        # fallback
-        return foldr((range, cond) -> Expr(:||, :($(var) in $(range)), cond),
-                     :(false),
-                     sort(range_encode(set), by=length, rev=true))
+        return (4, nothing)
+    end 
+end
+
+function generate_membership_code(sym::Symbol, x::ByteSet)
+    p1, c1 = membership_element_code(sym, x)
+    p2, c2 = membership_element_code(sym, ~x)
+    expr = p2 < p1 ? :(!($c2)) : c1 
+    pri = min(p1, p2)
+    if pri < 4
+        return expr
+    else
+        head, tail = peel(x)
+        headcode = membership_element_code(sym, head)[2]
+        tailcode = generate_membership_code(sym, tail)
+        return Expr(:||, headcode, tailcode)
     end
 end
 

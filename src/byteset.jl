@@ -33,6 +33,9 @@ function Base.:(==)(s1::ByteSet, s2::ByteSet)
     return s1.a == s2.a && s1.b == s2.b && s1.c == s2.c && s1.d == s2.d
 end
 
+Base.:~(x::ByteSet) = ByteSet(~x.a, ~x.b, ~x.c, ~x.d)
+iscontiguous(x::ByteSet) = maximum(x) - minimum(x) == length(x) - 1
+
 function Base.in(byte::UInt8, set::ByteSet)
     if byte < 0x40
         return set.a & (UInt64(1) << (byte - 0x00)) != 0
@@ -44,6 +47,27 @@ function Base.in(byte::UInt8, set::ByteSet)
         return set.d & (UInt64(1) << (byte - 0xc0)) != 0
     end
 end
+
+"Peel off the first 64 values from the minimum to a new byteset"
+function peel(x::ByteSet)
+    min = minimum(x)
+    if min > 191
+        return (x, ByteSet())
+    end
+    mask = UInt64(1) << UInt64(min & 63) - UInt64(1)
+    if min < 64
+        peeled = ByteSet(x.a, x.b & mask, 0, 0)
+        rest = ByteSet(0, x.b & ~mask, x.c, x.d)
+    elseif min < 128
+        peeled = ByteSet(0, x.b, x.c & mask, 0)
+        rest = ByteSet(0, 0, x.c & ~mask, x.d)
+    else
+        peeled = ByteSet(0, 0, x.c, x.d & mask)
+        rest = ByteSet(0, 0, 0, x.d & ~mask)
+    end
+    return peeled, rest
+end
+
 
 Base.eltype(::Type{ByteSet}) = UInt8
 
