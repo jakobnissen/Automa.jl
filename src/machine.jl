@@ -89,19 +89,15 @@ function reorder_machine(machine::Machine)
 
     # Make new nodes complete with edges
     new_nodes = Dict(i => Node(i) for i in 1:length(old2new))
-    oldnodes = collect(traverse(machine.start))
-    @assert length(oldnodes) == length(machine.states)
     for old_node in traverse(machine.start)
         for (e, t) in old_node.edges
+            new_node = new_nodes[old2new[old_node.state]]
             push!(
-                new_nodes[old2new[old_node.state]].edges,
+                new_node.edges,
                 (e, new_nodes[old2new[t.state]])
             )
-
+            sort!(new_node.edges; by=first, lt=in_sort_order)
         end
-    end
-    for node in values(new_nodes)
-        sort!(node.edges; by=first, lt=in_sort_order)
     end
 
     # Rebuild machine and return it
