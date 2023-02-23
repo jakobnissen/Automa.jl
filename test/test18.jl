@@ -19,7 +19,7 @@ using Test
         bad_input = b"\0\a\b\t\n\v\r\x00\xff\xFF\\\\\\"
         @test validate(bad_input) == lastindex(bad_input)
         bad_input = b"\0\a\b\t\n\v\r\x00\xff\xFF\\"
-        @test validate(bad_input) == lastindex(bad_input) + 1
+        @test validate(bad_input) == 0
     end
 end
 

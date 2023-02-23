@@ -7,7 +7,7 @@ deprecations.
 module Stream
 
 import Automa
-import TranscodingStreams: TranscodingStream
+import TranscodingStreams: TranscodingStream, NoopStream
 
 """
     @relpos(pos)
@@ -47,26 +47,9 @@ need to evaluate it in a module in which the generated function is needed.
 - `initcode`: Initialization code (default: `:()`).
 - `loopcode`: Loop code (default: `:()`).
 - `returncode`: Return code (default: `:(return cs)`).
+- `errorcode`: Executed if `cs < 0` after `loopcode` (default error message)
 
-The generated code looks like this:
-```julia
-function {funcname}(stream::TranscodingStream, {arguments}...)
-    __buffer = stream.state.buffer1
-    \$(vars.data) = buffer.data
-    {declare variables used by the machine}
-    {initcode}
-    @label __exec__
-    {fill the buffer if more data is available}
-    {update p, is_eof and p_end to match buffer}
-    {execute the machine}
-    {update buffer position to value of p}
-    {loopcode}
-    if cs ≤ 0 || (is_eof && p > p_end)
-        @label __return__
-        {returncode}
-    end
-    @goto __exec__
-end
+See the source code of this function to see how the generated code looks like
 ```
 """
 function generate_reader(
@@ -131,6 +114,56 @@ function generate_reader(
         @goto __exec__
     end
     return functioncode
+end
+
+"""
+    generate_io_validator(funcname::Symbol, machine::Machine, goto::Bool=false)
+
+Create code that, when evaluated, defines a function named `funcname`.
+This function takes an `IO`, and checks if the data in the input conforms
+to the regex in `machine`, without executing any actions.
+If the input conforms, return `nothing`. If the input reaches EOF prematurely, return `0`.
+Else, return the byte number (1-indexed) of the first invalid byte.
+"""
+function generate_io_validator(funcname::Symbol, machine::Automa.Machine, goto::Bool=false)
+    ctx = if goto
+        Automa.CodeGenContext(generator=:goto)
+    else
+        Automa.DefaultCodeGenContext
+    end
+    vars = ctx.vars
+    returncode = quote
+        return if iszero(cs)
+            nothing
+        elseif $(vars.p) > $(vars.p_end)
+            0
+        else
+            byte_index
+        end
+    end
+    empty_actions = Dict{Symbol,Expr}(a => quote nothing end for a in Automa.machine_names(machine))
+    function_code = generate_reader(
+        funcname,
+        machine;
+        context=ctx,
+        actions=empty_actions,
+        initcode=:(byte_index = 1),
+        loopcode=:(byte_index += $(vars.p) - 1),
+        returncode=returncode,
+        errorcode=:(@goto __return__),
+    )
+    return quote
+        """
+            $($(funcname))(io::IO)::Union{Int, Nothing}
+
+        Checks if the data in `io` conforms to the given `Automa.Machine`.
+        Returns `nothing` if it does, else the byte index of the first invalid byte.
+        If the machine reached unexpected EOF, returns `0`.
+        """
+        $function_code
+
+        $(funcname)(io::$(IO)) = $(funcname)($(NoopStream)(io))
+    end 
 end
 
 end  # module
