@@ -39,12 +39,42 @@ using Test
         "xabc"
     ]
         @test foobar(bad_data) ===
-            barfoo(bad_data) ===
-            io_foo(IOBuffer(bad_data)) ===
-            io_bar(IOBuffer(bad_data)) ===
-            io_bar(NoopStream(IOBuffer(bad_data))) !==
+            barfoo(bad_data) !==
+            nothing
+
+        @test io_foo(IOBuffer(bad_data)) ==
+            io_bar(IOBuffer(bad_data)) ==
+            io_bar(NoopStream(IOBuffer(bad_data))) !=
             nothing
     end
+end
+
+@testset "Multiline validator" begin
+    machine = let
+        Automa.compile(re"(>[a-z]+\n)+")
+    end
+    eval(Automa.generate_io_validator(:io_bar, machine, false))
+    eval(Automa.generate_io_validator(:io_foo, machine, true))
+
+    let data = ">abc"
+        @test io_bar(IOBuffer(data)) == io_foo(IOBuffer(data)) == 0
+    end
+
+    let data = ">"
+        @test io_bar(IOBuffer(data)) == io_foo(IOBuffer(data)) == 0
+    end
+
+    let data = ""
+        @test io_bar(IOBuffer(data)) == io_foo(IOBuffer(data)) == 0
+    end
+
+    let data = ">abc\n>def\n>ghi\n>j!"
+        @test io_bar(IOBuffer(data)) == io_foo(IOBuffer(data)) == (4, 3)
+    end
+
+    let data = ">abc\n;"
+        @test io_bar(IOBuffer(data)) == io_foo(IOBuffer(data)) == (2, 1)
+    end 
 end
 
 end # module

@@ -123,7 +123,8 @@ Create code that, when evaluated, defines a function named `funcname`.
 This function takes an `IO`, and checks if the data in the input conforms
 to the regex in `machine`, without executing any actions.
 If the input conforms, return `nothing`. If the input reaches EOF prematurely, return `0`.
-Else, return the byte number (1-indexed) of the first invalid byte.
+Else, return the 1-based `(line, col)` of the first invalid byte.
+Note that sometimes the column cannot be determined, and will return be set to 0.
 """
 function generate_io_validator(funcname::Symbol, machine::Automa.Machine, goto::Bool=false)
     ctx = if goto
@@ -145,7 +146,17 @@ function generate_io_validator(funcname::Symbol, machine::Automa.Machine, goto::
         elseif $(vars.p) > $(vars.p_end)
             0
         else
-            line_num
+            # We only bother looking in the current buffer in order
+            # to determine the column. It's possible the last newline was
+            # lost from the buffer, in which case we return 0 (as documented).
+            # Fixing this case will slow down runtime too much.
+            line_num -= $(vars.byte) == UInt8('\n')
+            col = 0
+            @inbounds for i in $(vars.p)-1:-1:1
+                col += 1
+                mem[i] == UInt8('\n') && break
+            end
+            (line_num, col)
         end
     end
     empty_actions = Dict{Symbol,Expr}(a => quote nothing end for a in Automa.machine_names(machine))
