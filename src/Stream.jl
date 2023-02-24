@@ -132,13 +132,20 @@ function generate_io_validator(funcname::Symbol, machine::Automa.Machine, goto::
         Automa.DefaultCodeGenContext
     end
     vars = ctx.vars
+    loopcode = quote
+        # This is actually surprisingly slow (about 6 GB/s)
+        # Still, I guess it's OK for most people
+        @inbounds for i in 1:$(vars.p)
+            line_num += $(vars.mem)[i] == UInt8('\n')
+        end
+    end
     returncode = quote
         return if iszero(cs)
             nothing
         elseif $(vars.p) > $(vars.p_end)
             0
         else
-            byte_index
+            line_num
         end
     end
     empty_actions = Dict{Symbol,Expr}(a => quote nothing end for a in Automa.machine_names(machine))
@@ -147,8 +154,8 @@ function generate_io_validator(funcname::Symbol, machine::Automa.Machine, goto::
         machine;
         context=ctx,
         actions=empty_actions,
-        initcode=:(byte_index = 1),
-        loopcode=:(byte_index += $(vars.p) - 1),
+        initcode=:(line_num = 1),
+        loopcode=loopcode,
         returncode=returncode,
         errorcode=:(@goto __return__),
     )
