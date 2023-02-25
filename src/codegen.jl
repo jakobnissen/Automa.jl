@@ -750,8 +750,12 @@ macro setbuffer()
     :($WARNING_STRING)
 end
 
-# If cs is nothing, we're in the table generator and do not need to set `cs`. Then we use break.
-# if it's an int, we set cs and escape using @goto
+# The reason we have this function is because we don't want to expose too deep
+# internals of TranscodingStream buffers to the final user, but the user needs to
+# inject code that operates on buffers into Automa. So, we need to abstract it.
+# Maybe they should have been ordinary functions... (TODO)
+# @escape is an exception, this does require code generation that touches into
+# the internals of machine execution
 function rewrite_special_macros(;
     ctx::CodeGenContext,
     ex::Expr,
@@ -766,7 +770,10 @@ function rewrite_special_macros(;
         if special_macro isa Symbol
             expr = if special_macro == Symbol("@escape")
                 if at_eof === nothing
-                    error("Special macro @escape can only be used in machine actions")
+                    error(
+                        "Special macro @escape can only be used in `actions`, ",
+                        "and not in e.g. `initcode` or other such user-injected code"
+                    )
                 # If we're at eof, machine is already stopped. 
                 elseif at_eof
                     quote nothing end
