@@ -1,6 +1,7 @@
 module Automa
 
 using Printf: @sprintf
+using TranscodingStreams: TranscodingStream, NoopStream
 import ScanByte: ScanByte, ByteSet
 
 # Encode a byte set into a sequence of non-empty ranges.
@@ -36,11 +37,10 @@ include("dot.jl")
 include("memory.jl")
 include("codegen.jl")
 include("tokenizer.jl")
-include("Stream.jl")
+include("stream.jl")
 
 const RE = Automa.RegExp
 using .RegExp: @re_str, opt, rep, rep1
-using .Stream: generate_reader, generate_io_validator
 
 # This list of exports lists the API
 export RE,

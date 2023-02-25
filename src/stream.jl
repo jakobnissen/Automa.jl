@@ -1,15 +1,4 @@
 """
-Streaming Interface of Automa.jl.
-
-NOTE: This module is still experimental. The behavior may change without
-deprecations.
-"""
-module Stream
-
-import Automa
-import TranscodingStreams: TranscodingStream, NoopStream
-
-"""
     generate_reader(funcname::Symbol, machine::Automa.Machine; kwargs...)
 
 Generate a streaming reader function of the name `funcname` from `machine`.
@@ -176,5 +165,3 @@ function generate_io_validator(funcname::Symbol, machine::Automa.Machine, goto::
         $(funcname)(io::$(IO)) = $(funcname)($(NoopStream)(io))
     end 
 end
-
-end  # module
