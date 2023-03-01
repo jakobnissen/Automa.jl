@@ -1,6 +1,5 @@
 module Automa
 
-using Printf: @sprintf
 using ScanByte: ScanByte, ByteSet
 
 # Encode a byte set into a sequence of non-empty ranges.
