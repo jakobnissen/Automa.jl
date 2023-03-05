@@ -5,9 +5,9 @@ using Test
 
 @testset "Test09" begin
     make_tokenizer(:tokenize, [
-        :a  => re"a",
-        :ab => re"a*b",
-        :cd => re"cd"
+        re"a",
+        re"a*b",
+        re"cd"
     ]) |> eval
 
     @test tokenize("") == []

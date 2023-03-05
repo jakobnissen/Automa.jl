@@ -157,27 +157,27 @@ using Test
 @testset "MiniJulia" begin
     include("../example/tokenizer.jl")
     @test tokens[1:14] == [
-        (:identifier,"quicksort"),
-        (:lparen,"("),
-        (:identifier,"xs"),
-        (:rparen,")"),
-        (:spaces," "),
-        (:equal,"="),
-        (:spaces," "),
-        (:identifier,"quicksort!"),
-        (:lparen,"("),
-        (:identifier,"copy"),
-        (:lparen,"("),
-        (:identifier,"xs"),
-        (:rparen,")"),
-        (:rparen,")")]
+        ("quicksort", identifier),
+        ("(", lparen),
+        ("xs", identifier),
+        (")", rparen),
+        (" ", spaces),
+        ("=", equal),
+        (" ", spaces),
+        ("quicksort!", identifier),
+        ("(", lparen),
+        ("copy", identifier),
+        ("(", lparen),
+        ("xs", identifier),
+        (")", rparen),
+        (")", rparen)]
     @test tokens[end-5:end] == [
-        (:keyword,"return"),
-        (:spaces," "),
-        (:identifier,"j"),
-        (:newline,"\n"),
-        (:keyword,"end"),
-        (:newline,"\n")]
+        ("return", keyword),
+        (" ", spaces),
+        ("j", identifier),
+        ("\n", newline),
+        ("end", keyword),
+        ("\n", newline)]
 end
 end
 

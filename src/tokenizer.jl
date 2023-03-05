@@ -55,9 +55,13 @@ function make_tokenizer(
         Automa.DefaultCodeGenContext
     end
     vars = ctx.vars
+    UType = Union{RegExp.RE, Pair{RegExp.RE, Expr}}
     # Strip actions from regex, add enter/final actions specific to tokenizer, and make sure it's
     # a Vector{Union{RE, Pair{RE, Expr}}
-    tokens = collect(Union{RegExp.RE, Pair{RegExp.RE, Expr}}, Iterators.map(enumerate(tokens)) do (i, token)
+    tokens = collect(UType, Iterators.map(enumerate(tokens)) do (i, token)
+        if !(token isa UType)
+            error("Tokenizer must take vector of $(UType)")
+        end
         regex = token isa RegExp.RE ? token : first(token)
         regex = onenter!(onfinal!(RegExp.strip_actions(regex), Symbol(:__token_, i)), :__enter_token)
         token isa RegExp.RE ? regex : (regex => last(token))
