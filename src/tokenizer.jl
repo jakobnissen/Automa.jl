@@ -13,7 +13,7 @@ Base.IteratorSize(::Type{<:Tokenizer}) = Base.SizeUnknown()
 # I'm not quite sure how to handle this.
 """
     make_tokenizer(
-        funcname::Symbol, tokens::Vector{<:Union{Re, Pair{RE, Expr}}};
+        funcname::Symbol, tokens::Vector{RegExp.RE};
         goto=true, unambiguous=false
     )
 
@@ -25,8 +25,7 @@ of 3-tuples of integers:
 * The third is the token kind: The index in the input list `tokens`.
 
 # Extra help
-Any actions inside the input regexes will be ignored, but for every token that is
-a `Pair{RE, Expr}`, the expression will be evaluated when the token is emitted.
+Any actions inside the input regexes will be ignored.
 
 The keyword `unambiguous` decides which of multiple matching tokens is emitted:
 If `false` (default), the longest token is emitted. If multiple tokens have the
@@ -56,7 +55,7 @@ function make_tokenizer(
     tokens::Vector{RegExp.RE};
     goto::Bool=true,
     unambiguous=false
-)
+)::Expr
     ctx = if goto
         Automa.CodeGenContext(generator=:goto)
     else
