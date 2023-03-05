@@ -73,7 +73,7 @@ function make_tokenizer(
     nfa = re2nfa(RegExp.RE(:alt, map(last, tokens)), predefined_actions)
     machine = nfa2machine(nfa; unambiguous=unambiguous)
     actions = Dict{Symbol, Expr}(
-        :__enter_token => :(start = $(vars.p)),
+        :__enter_token => :(token_start = $(vars.p)),
     )
     for (i, symbol) in enumerate(symbols)
         actions[Symbol(:__token_, symbol)] = quote
@@ -87,36 +87,39 @@ function make_tokenizer(
             tokens = Vector{Tuple{Int, Int32, UInt32}}(undef, 1024)
             n_tokens = UInt(0)
             stop = 0
-            while $(vars.cs) == 1
-                start = 0
+            start = 1
+            token_start = 1
+            while $(vars.p) ≤ $(vars.p_end)
+                $(vars.p) = token_start
                 token = UInt32(0)
+                $(vars.cs) = 1
                 $(generate_exec_code(ctx, machine, actions))
-                # If a full token has been observed, we accept error (either EOF),
-                # or a mismatched byte, and emit the token.
+                $(vars.cs) = 1
+
+                # We emit an error token if either we have a real token and also un-emitted error data
+                # (in which case we know the end of the error data, namely before the start of the real token),
+                # Or if we reach EOF without having found a token
+                if (!iszero(token) & (start < token_start)) | (iszero(token) & ($(vars.p) > $(vars.p_end)))
+                    n_tokens += UInt(1)
+                    if n_tokens > length(tokens)
+                        resize!(tokens, n_tokens + UInt(1023))
+                    end
+                    len = iszero(token) ? $(vars.p) - start : token_start - start 
+                    @inbounds tokens[n_tokens] = (start, (len)%Int32, UInt32(0))
+                end
+
+                # Emit a token if we have one
                 if !iszero(token)
                     n_tokens += UInt(1)
                     if n_tokens > length(tokens)
                         resize!(tokens, n_tokens + UInt(1023))
                     end
-                    @inbounds tokens[n_tokens] = (start, (stop-start+1)%Int32, token)
-                    $(vars.cs) = 1
-
-                    # Reset p, in case a token was matched far back, and we're
-                    # currently in the middle of another token which then turned
-                    # out not to match. I.e. re"a*b", re"a", match "aaa".
-                    # It reads past index 1 in case it matches the first regex, but
-                    # then it doesn't match so it need to reset after second regex
-                    $(vars.p) = stop + 1
-                # If we reach an error without having seen a token, there are two
-                # options: We just reached EOF without ever starting a token, indicating
-                # ordinary and expected EOF, or else we reached an invalid byte, or
-                # EOF in the middle of a token
+                    @inbounds tokens[n_tokens] = (token_start, (stop-token_start+1)%Int32, token)
+                    start = token_start = $(vars.p) = stop + 1
+                    # TODO: Execute code here when a token is emitted
                 else
-                    if $(vars.p) > $(vars.p_end) && iszero(start)
-                        break
-                    else
-                        $(generate_input_error_code(DefaultCodeGenContext, machine))
-                    end
+                    # If we have no token, then we begin looking for a new token at the next byte
+                    token_start += 1
                 end
             end
             return resize!(tokens, n_tokens)
