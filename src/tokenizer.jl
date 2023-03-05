@@ -53,7 +53,7 @@ julia> foo("abbbabaaababa")
 """
 function make_tokenizer(
     funcname::Symbol,
-    tokens::Vector;
+    tokens::Vector{RegExp.RE};
     goto::Bool=true,
     unambiguous=false
 )
@@ -63,41 +63,32 @@ function make_tokenizer(
         Automa.DefaultCodeGenContext
     end
     vars = ctx.vars
-    UType = Union{RegExp.RE, Pair{RegExp.RE, Expr}}
-    # Strip actions from regex, add enter/final actions specific to tokenizer, and make sure it's
-    # a Vector{Union{RE, Pair{RE, Expr}}
-    tokens = collect(UType, Iterators.map(enumerate(tokens)) do (i, token)
-        if !(token isa UType)
-            error("Tokenizer must take vector of $(UType)")
-        end
-        regex = token isa RegExp.RE ? token : first(token)
-        regex = onenter!(onfinal!(RegExp.strip_actions(regex), Symbol(:__token_, i)), :__enter_token)
-        token isa RegExp.RE ? regex : (regex => last(token))
-    end)
+    tokens = map(enumerate(tokens)) do (i, regex)
+        onenter!(onfinal!(RegExp.strip_actions(regex), Symbol(:__token_, i)), :__enter_token)
+    end
     # We need the predefined actions here simply because it allows us to add priority to the actions.
     # This is necessary to guarantee that tokens are disambiguated in the correct order.
     predefined_actions = Dict{Symbol, Action}()
-    for priority in eachindex(tokens)
-        predefined_actions[Symbol(:__token_, priority)] = Action(Symbol(:__token_, priority), 1000 + priority)
+    # In these actions, store enter token and exit token.
+    actions = Dict{Symbol, Expr}(
+        :__enter_token => :(token_start = $(vars.p)),
+    )
+    for i in eachindex(tokens)
+        predefined_actions[Symbol(:__token_, i)] = Action(Symbol(:__token_, i), 1000 + i)
+        # The action for every token's final byte is to say: "This is where the token ends, and this is
+        # what kind it is"
+        actions[Symbol(:__token_, i)] = quote
+            stop = $(vars.p)
+            token = $(UInt32(i))
+        end
     end
     # We intentionally set unambiguous=true. With the current construction of
     # this tokenizer, this will cause the longest token to be matched, i.e. for
     # the regex "ab" and "a", the text "ab" will emit only the "ab" regex.
     # Here, the NFA (i.e. the final regex we match) is a giant alternation statement between each of the tokens,
     # i.e. input is token1 or token2 or ....
-    nfa = re2nfa(RegExp.RE(:alt, Any[i isa RegExp.RE ? i : first(i) for i in tokens]), predefined_actions)
+    nfa = re2nfa(RegExp.RE(:alt, tokens), predefined_actions)
     machine = nfa2machine(nfa; unambiguous=unambiguous)
-    actions = Dict{Symbol, Expr}(
-        :__enter_token => :(token_start = $(vars.p)),
-    )
-    # The action for every token's final byte is to say: "This is where the token ends, and this is
-    # what kind it is"
-    for i in eachindex(tokens)
-        actions[Symbol(:__token_, i)] = quote
-            stop = $(vars.p)
-            token = $(UInt32(i))
-        end
-    end
     return quote
         $(funcname)(data) = $(Tokenizer)($(funcname), data)
         function Base.iterate(tokenizer::$(Tokenizer){typeof($funcname)}, state=(1, Int32(1), UInt32(0)))
