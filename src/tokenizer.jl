@@ -5,7 +5,7 @@
 # I'm not quite sure how to handle this.
 """
     make_tokenizer(
-        funcname::Symbol, tokens::Vector{Pair{Symbol, RE}};
+        funcname::Symbol, tokens::Vector{<:Union{Re, Pair{RE, Expr}}};
         goto=true, unambiguous=false
     )
 
@@ -15,7 +15,10 @@ of 3-tuples of integers:
 * The first is the 1-based starting index of the token in the buffer
 * The second is the length of the token in bytes
 * The third is the token kind: The index in the input list `tokens`.
-Any actions inside the input regexes will be ignored.
+
+# Extra help
+Any actions inside the input regexes will be ignored, but for every token that is
+a `Pair{RE, Expr}`, the expression will be evaluated when the token is emitted.
 
 The keyword `unambiguous` decides which of multiple matching tokens is emitted:
 If `false` (default), the longest token is emitted. If multiple tokens have the
@@ -42,7 +45,7 @@ julia> foo("abbbabaaababa")
 """
 function make_tokenizer(
     funcname::Symbol,
-    tokens::Vector{Pair{Symbol, RegExp.RE}};
+    tokens::Vector;
     goto::Bool=true,
     unambiguous=false
 )
@@ -52,31 +55,33 @@ function make_tokenizer(
         Automa.DefaultCodeGenContext
     end
     vars = ctx.vars
-    symbols = map(first, tokens)
-    if !allunique(symbols)
-        error("Names of tokens must be unique")
-    end
-    if :__enter_token ∈ symbols
-        error("Token symbol cannot be named `:__enter_token`")
-    end
-    tokens = map(tokens) do (symbol, regex)
-        regex = onfinal!(RegExp.strip_actions(regex), Symbol(:__token_, symbol))
-        symbol => onenter!(regex, :__enter_token)
-    end
+    # Strip actions from regex, add enter/final actions specific to tokenizer, and make sure it's
+    # a Vector{Union{RE, Pair{RE, Expr}}
+    tokens = collect(Union{RegExp.RE, Pair{RegExp.RE, Expr}}, Iterators.map(enumerate(tokens)) do (i, token)
+        regex = token isa RegExp.RE ? token : first(token)
+        regex = onenter!(onfinal!(RegExp.strip_actions(regex), Symbol(:__token_, i)), :__enter_token)
+        token isa RegExp.RE ? regex : (regex => last(token))
+    end)
+    # We need the predefined actions here simply because it allows us to add priority to the actions.
+    # This is necessary to guarantee that tokens are disambiguated in the correct order.
     predefined_actions = Dict{Symbol, Action}()
-    for (priority, (symbol, _)) in enumerate(tokens)
-        predefined_actions[Symbol(:__token_, symbol)] = Action(Symbol(:__token_, symbol), 1000 + priority)
+    for priority in eachindex(tokens)
+        predefined_actions[Symbol(:__token_, priority)] = Action(Symbol(:__token_, priority), 1000 + priority)
     end
     # We intentionally set unambiguous=true. With the current construction of
     # this tokenizer, this will cause the longest token to be matched, i.e. for
     # the regex "ab" and "a", the text "ab" will emit only the "ab" regex.
-    nfa = re2nfa(RegExp.RE(:alt, map(last, tokens)), predefined_actions)
+    # Here, the NFA (i.e. the final regex we match) is a giant alternation statement between each of the tokens,
+    # i.e. input is token1 or token2 or ....
+    nfa = re2nfa(RegExp.RE(:alt, Any[i isa RegExp.RE ? i : first(i) for i in tokens]), predefined_actions)
     machine = nfa2machine(nfa; unambiguous=unambiguous)
     actions = Dict{Symbol, Expr}(
         :__enter_token => :(token_start = $(vars.p)),
     )
-    for (i, symbol) in enumerate(symbols)
-        actions[Symbol(:__token_, symbol)] = quote
+    # The action for every token's final byte is to say: "This is where the token ends, and this is
+    # what kind it is"
+    for i in eachindex(tokens)
+        actions[Symbol(:__token_, i)] = quote
             stop = $(vars.p)
             token = $(UInt32(i))
         end
@@ -87,11 +92,16 @@ function make_tokenizer(
             tokens = Vector{Tuple{Int, Int32, UInt32}}(undef, 1024)
             n_tokens = UInt(0)
             stop = 0
+            # Start is the pos+1 of where we last emitted a token, token_start
+            # is the beginning of this token. start:token_start-1 is error data
             start = 1
             token_start = 1
             while $(vars.p) ≤ $(vars.p_end)
                 $(vars.p) = token_start
+                # In each iteration, no token is seen so far
                 token = UInt32(0)
+                # Every time we try to find a token, we reset the machine's state to 1, i.e. we carry
+                # no memory between each token.
                 $(vars.cs) = 1
                 $(generate_exec_code(ctx, machine, actions))
                 $(vars.cs) = 1
@@ -116,7 +126,7 @@ function make_tokenizer(
                     end
                     @inbounds tokens[n_tokens] = (token_start, (stop-token_start+1)%Int32, token)
                     start = token_start = $(vars.p) = stop + 1
-                    # TODO: Execute code here when a token is emitted
+                    $(generate_emit_token_code(tokens))
                 else
                     # If we have no token, then we begin looking for a new token at the next byte
                     token_start += 1

@@ -625,6 +625,14 @@ function generate_input_error_code(ctx::CodeGenContext, machine::Machine)
     end
 end
 
+# Generate code that runs the expression when the given token is emitted
+function generate_emit_token_code(tokens::Vector{Union{RegExp.RE, Pair{RegExp.RE, Expr}}})::Expr
+    exprs = [(i, last(x)) for (i, x) in enumerate(tokens) if x isa Pair]
+    foldr(:(), exprs) do (i, expr), els
+        Expr(:if, :(token == $i), expr, els)
+    end
+end
+
 # Add a warning if users go down a rabbit hole trying to figure out what these macros
 # expand to.
 # See the function `rewrite_special_macros` below, where the expansion happens
