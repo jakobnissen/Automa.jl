@@ -59,6 +59,7 @@ export RE,
     generate_code,
     generate_reader,
     generate_io_validator,
+    make_tokenizer,
 
     # cat and alt is not exported in favor of * and |
     opt,

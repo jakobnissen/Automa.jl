@@ -5,7 +5,7 @@
 # I'm not quite sure how to handle this.
 """
     make_tokenizer(
-        funcname::Symbol, tokens::Vector{Symbol, RE};
+        funcname::Symbol, tokens::Vector{Pair{Symbol, RE}};
         goto=true, unambiguous=false
     )
 
@@ -63,11 +63,15 @@ function make_tokenizer(
         regex = onfinal!(RegExp.strip_actions(regex), Symbol(:__token_, symbol))
         symbol => onenter!(regex, :__enter_token)
     end
+    predefined_actions = Dict{Symbol, Action}()
+    for (priority, (symbol, _)) in enumerate(tokens)
+        predefined_actions[Symbol(:__token_, symbol)] = Action(Symbol(:__token_, symbol), 1000 + priority)
+    end
     # We intentionally set unambiguous=true. With the current construction of
     # this tokenizer, this will cause the longest token to be matched, i.e. for
     # the regex "ab" and "a", the text "ab" will emit only the "ab" regex.
-    # Requiring the user to pass in
-    machine = compile(RegExp.RE(:alt, map(last, tokens)); unambiguous=unambiguous)
+    nfa = re2nfa(RegExp.RE(:alt, map(last, tokens)), predefined_actions)
+    machine = nfa2machine(nfa; unambiguous=unambiguous)
     actions = Dict{Symbol, Expr}(
         :__enter_token => :(start = $(vars.p)),
     )

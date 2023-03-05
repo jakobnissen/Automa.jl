@@ -10,54 +10,42 @@ string = '"' * rep(re"[ !#-~]" | re"\\\\\"") * '"'
 triplestring = "\"\"\"" * (re"[ -~]*" \ re"\"\"\"") * "\"\"\""
 newline = re"\r?\n"
 
-const minijulia = compile([
-    re","          => :(emit(:comma)),
-    re":"          => :(emit(:colon)),
-    re";"          => :(emit(:semicolon)),
-    re"\."         => :(emit(:dot)),
-    re"\?"         => :(emit(:question)),
-    re"="          => :(emit(:equal)),
-    re"\("         => :(emit(:lparen)),
-    re"\)"         => :(emit(:rparen)),
-    re"\["         => :(emit(:lbracket)),
-    re"]"          => :(emit(:rbracket)),
-    re"{"          => :(emit(:lbrace)),
-    re"}"          => :(emit(:rbrace)),
-    re"$"          => :(emit(:dollar)),
-    re"&&"         => :(emit(:and)),
-    re"\|\|"       => :(emit(:or)),
-    re"::"         => :(emit(:typeannot)),
-    keyword        => :(emit(:keyword)),
-    identifier     => :(emit(:identifier)),
-    operator       => :(emit(:operator)),
-    macrocall      => :(emit(:macrocall)),
-    re"[0-9]+"     => :(emit(:integer)),
-    comment        => :(emit(:comment)),
-    char           => :(emit(:char)),
-    string         => :(emit(:string)),
-    triplestring   => :(emit(:triplestring)),
-    newline        => :(emit(:newline)),
-    re"[\t ]+"     => :(emit(:spaces)),
-])
+minijulia = [
+    :identifier   => identifier,
+    :comma        => re",",
+    :colon        => re":",
+    :semicolon    => re";",
+    :dot          => re"\.",
+    :question     => re"\?",
+    :equal        => re"=",
+    :lparen       => re"\(",
+    :rparen       => re"\)",
+    :lbracket     => re"\[",
+    :rbracket     => re"]",
+    :lbrace       => re"{",
+    :rbrace       => re"}",
+    :dollar       => re"$",
+    :and          => re"&&",
+    :or           => re"\|\|",
+    :typeannot    => re"::",
+    :keyword      => keyword,
+    :operator     => operator,
+    :macrocall    => macrocall,
+    :integer      => re"[0-9]+",
+    :comment      => comment,
+    :char         => char,
+    :string       => string,
+    :triplestring => triplestring,
+    :newline      => newline,
+    :spaces       => re"[\t ]+",
+]
 
 #=
 write("minijulia.dot", Automa.machine2dot(minijulia.machine))
 run(`dot -Tsvg -o minijulia.svg minijulia.dot`)
 =#
 
-context = CodeGenContext()
-@eval function tokenize(data)
-    $(Automa.generate_init_code(context, minijulia))
-    tokens = Tuple{Symbol,String}[]
-    emit(kind) = push!(tokens, (kind, data[ts:te]))
-    while p ≤ p_end && cs > 0
-        $(Automa.generate_exec_code(context, minijulia))
-    end
-    if cs < 0
-        error("failed to tokenize")
-    end
-    return tokens
-end
+make_tokenizer(:tokenize, minijulia) |> eval
 
 tokens = tokenize("""
 quicksort(xs) = quicksort!(copy(xs))
