@@ -1,3 +1,11 @@
+struct Tokenizer{F, D}
+    f::F
+    data::D
+end
+
+Tokenizer(f::Function, data) = Tokenizer{typeof(f), typeof(data)}(f, data)
+Base.IteratorSize(::Type{<:Tokenizer}) = Base.SizeUnknown()
+
 # Currently, actions are added to final byte. This usually inhibits SIMD,
 # because the end position must be updated every byte.
 # It would be faster to add actions to :exit, but then the action will not actually
@@ -91,52 +99,51 @@ function make_tokenizer(
         end
     end
     return quote
-        function $(funcname)(data)
+        $(funcname)(data) = $(Tokenizer)($(funcname), data)
+        function Base.iterate(tokenizer::$(Tokenizer){typeof($funcname)}, state=(1, Int32(1), UInt32(0)))
+            data = tokenizer.data
+            (start, len, token) = state
+            start > sizeof(data) && return nothing
+            if !iszero(token)
+                return (state, (start + len, Int32(0), UInt32(0)))
+            end
             $(generate_init_code(ctx, machine))
-            tokens = Vector{Tuple{Int, Int32, UInt32}}(undef, 1024)
-            n_tokens = UInt(0)
+            token_start = start
             stop = 0
-            # Start is the pos+1 of where we last emitted a token, token_start
-            # is the beginning of this token. start:token_start-1 is error data
-            start = 1
-            token_start = 1
-            while $(vars.p) ≤ $(vars.p_end)
+            token = UInt32(0)
+            while true
                 $(vars.p) = token_start
-                # In each iteration, no token is seen so far
-                token = UInt32(0)
                 # Every time we try to find a token, we reset the machine's state to 1, i.e. we carry
                 # no memory between each token.
                 $(vars.cs) = 1
                 $(generate_exec_code(ctx, machine, actions))
                 $(vars.cs) = 1
 
-                # We emit an error token if either we have a real token and also un-emitted error data
-                # (in which case we know the end of the error data, namely before the start of the real token),
-                # Or if we reach EOF without having found a token
-                if (!iszero(token) & (start < token_start)) | (iszero(token) & ($(vars.p) > $(vars.p_end)))
-                    n_tokens += UInt(1)
-                    if n_tokens > length(tokens)
-                        resize!(tokens, n_tokens + UInt(1023))
-                    end
-                    len = iszero(token) ? $(vars.p) - start : token_start - start 
-                    @inbounds tokens[n_tokens] = (start, (len)%Int32, UInt32(0))
-                end
-
-                # Emit a token if we have one
+                # There are only a few possibilities for why it stopped execution, we handle
+                # each of them here.
+                # If a token was found:
                 if !iszero(token)
-                    n_tokens += UInt(1)
-                    if n_tokens > length(tokens)
-                        resize!(tokens, n_tokens + UInt(1023))
+                    found_token = (token_start, (stop-token_start+1)%Int32, token)
+                    # If a token was found, but there are some error data, we emit the error data first,
+                    # then set the state to be nonzero so the token is emitted next iteration
+                    if start < token_start
+                        error_token = (start, (token_start-start)%Int32, UInt32(0))
+                        return (error_token, found_token)
+                    # If no error data, simply emit the token with a zero state
+                    else
+                        return (found_token, (stop+1, Int32(0), UInt32(0)))
                     end
-                    @inbounds tokens[n_tokens] = (token_start, (stop-token_start+1)%Int32, token)
-                    start = token_start = $(vars.p) = stop + 1
-                    $(generate_emit_token_code(tokens))
                 else
-                    # If we have no token, then we begin looking for a new token at the next byte
-                    token_start += 1
+                    # If no token was found and EOF, emit an error token for the rest of the data
+                    if $(vars.p) > $(vars.p_end)
+                        error_token = (start, ($(vars.p) - start)%Int32, UInt32(0))
+                        return (error_token, ($(vars.p_end)+1, Int32(0), UInt32(0)))
+                    # If no token, and also not EOF, we continue, looking at next byte
+                    else
+                        token_start += 1
+                    end
                 end
             end
-            return resize!(tokens, n_tokens)
         end
     end
 end
