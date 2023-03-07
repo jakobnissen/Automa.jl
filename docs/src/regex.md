@@ -54,5 +54,6 @@ end
 
 ## Reference
 ```@docs
-Automa.RE
+RE
+@re_str
 ```

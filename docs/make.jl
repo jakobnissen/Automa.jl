@@ -2,6 +2,8 @@ using Documenter
 using TranscodingStreams # to load extension
 using Automa
 
+DocMeta.setdocmeta!(Automa, :DocTestSetup, :(using Automa); recursive=true)
+
 #include("make_pngs.jl")
 
 makedocs(
@@ -17,11 +19,12 @@ makedocs(
         "Customizing codegen" => "custom.md",
         "Parsing IOs" => "io.md",
         "Creating readers" => "reader.md",
-        "Debigging Automa" => "debugging.md",
-        "References" => "references.md"
+        "Debugging Automa" => "debugging.md",
         ],
     format = Documenter.HTML(
-        prettyurls = get(ENV, "CI", nothing) == "true")
+        prettyurls = get(ENV, "CI", nothing) == "true"
+    ),
+    checkdocs = :all
 )
 
 deploydocs(
