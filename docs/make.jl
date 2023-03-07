@@ -1,14 +1,16 @@
 using Documenter
+using TranscodingStreams # to load extension
 using Automa
 
-# run(`julia actions.jl`)
-# run(`julia preconditions.jl`)
+include("make_pngs.jl")
 
 makedocs(
     sitename = "Automa.jl",
     modules = [Automa],
     pages = [
         "Home" => "index.md",
+        "Theory" => "theory.md",
+        "Regex" => "regex.md",
         "References" => "references.md"
         ],
     format = Documenter.HTML(
