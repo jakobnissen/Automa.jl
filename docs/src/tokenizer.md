@@ -55,7 +55,7 @@ julia> collect(iterator)
  (9, 1, 0x00000006)
  (10, 1, 0x00000004)
  (11, 1, 0x00000002)
- ```
+```
 
 Any data which could not be tokenized is given the error token `UInt32(0)`:
 ```julia
@@ -125,3 +125,10 @@ So, `a` will be emitted as `re"ab*"`, as its index of 2 beats the previous regex
 
 If you don't want emitted tokens to depend on these priority rules, you can set the optional keyword `unambiguous=true` in the `make_tokenizer` function, in which case `make_tokenizer` will error if any input text could be broken down into different tokens.
 However, note that this may cause most tokenizers to error when being built, as most tokenization processes are ambiguous.
+
+## Reference
+```@docs
+Automa.Tokenizer
+Automa.tokenize
+Automa.make_tokenizer
+```

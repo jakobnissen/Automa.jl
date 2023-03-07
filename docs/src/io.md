@@ -1,8 +1,12 @@
-## Parsing from an IO
-Suppose now instead you want to parse a FASTA file of _arbitrary size_, expecting that it may run into the tens of gigabytes.
-In that case, it's not feasible to parse from a byte buffer, and you must instead parse from an IO object.
-Automa enables this by hooking into `TranscodingStreams.jl`.
-This package provides a wrapper IO of the type `TranscodingStream`.
+# Parsing from an IO
+
+!!! note
+    Parsing from an IO relies on TranscodingStreams.jl, and the relevant methods are defined in an extension module in Automa.
+    If you use Julia 1.9 or later, you must load TranscodingStreams before loading Automa to test this functionality.
+
+Some file types are gigabytes or tens of gigabytes in size.
+For these files, parsing from a buffer may be impractical, as they require you to read in the entire file in memory at once.
+Automa enables this by hooking into `TranscodingStreams.jl`, a package that provides a wrapper IO of the type `TranscodingStream`.
 Importantly, these streams buffer their input data.
 Automa is thus able to operate directly on the input buffers of `TranscodingStream` objects.
 
@@ -41,13 +45,18 @@ function { function name }(stream::TranscodingStream, { args... })
 end
 ```
 
-The content marked `{ function name }`, `{ args... }`, `{ init code }`, `{ loop code }` and `{ return code }` are arguments to `Automa.generate_reader`.
+The content marked `{ function name }`, `{ args... }`, `{ init code }`, `{ loop code }` and `{ return code }` are arguments provided to `Automa.generate_reader`.
 By providing these, the user can customize the generated function further.
 
-The main difference is the label/GOTO pair `EXECUTE MACHINE`, which causes Automa to repeatedly load data into the buffer, execute the machine, then flush used data from the buffer, then execute the machine, and so on, until interrupted.
+The main difference from the code generated to parse a buffer is the label/GOTO pair `EXECUTE MACHINE`, which causes Automa to repeatedly load data into the buffer, execute the machine, then flush used data from the buffer, then execute the machine, and so on, until interrupted.
 
 Importantly, `p` and `p_end` is continuously updated in this loop, as flushing the data may move data around such that these changes.
+This means you can't simply store a variable `marked_pos` that points to the current value of `p` and expect that the same data is at that position later.
 Furthermore, `is_eof` is set to whether the stream has reached EOF.
+
+```@docs
+Automa.generate_reader
+```
 
 ## Example use
 Let's show the simplest possible example of such a function.
@@ -79,13 +88,19 @@ julia> validate_fasta(NoopStream(IOBuffer("random data")))
 false
 ```
 
-## Parsing records using `generate_reader`
+## Reading a single record
+
+!!! danger
+    The following code is only for demonstration purposes.
+    It has several important flaws, which will be adressed in a later section, so do not copy-paste it for serious work.
+
 There are a few more subtleties related to the `generate_reader` function.
 Suppose we instead want to create a function that reads a single FASTA record from an IO.
 In this case, it's no good that the function created from `generate_reader` will loop until the IO reaches EOF - we need to find a way to stop it.
 We do this by stopping the machine execution at certain points - for example, if the machine has created a FASTA record.
 
 We will reuse our `Seq` struct and our `Machine` from the "parsing from a buffer" section of this tutorial:
+
 ```julia
 struct Seq
     name::String
@@ -93,17 +108,10 @@ struct Seq
 end
 
 machine = let
-    header = re"[a-z]+"
-    header.actions[:enter] = [:mark_position]
-    header.actions[:exit] = [:header]
-    
-    seqline = re"[ACGT]+"
-    seqline.actions[:enter] = [:mark_position]
-    seqline.actions[:exit] = [:seqline]
-    
-    record = re">" * header * re"\n" * RE.rep1(seqline * re"\n")
-    record.actions[:exit] = [:record]
-    compile(RE.rep(record))
+    header = onexit!(onenter!(re"[a-z]+", :mark_pos), :header)
+    seqline = onexit!(onenter!(re"[ACGT]+", :mark_pos), :seqline)
+    record = onexit!(re">" * header * '\n' * rep1(seqline * '\n'), :record)
+    compile(rep(record))
 end
 ```
 
@@ -112,22 +120,24 @@ we will use the pseudo-macro `@escape`, which will escape out of the machine:
 
 ```julia
 actions = Dict{Symbol, Expr}(
-    :mark_position => :(pos = p),
+    :mark_pos => :(pos = o),
     :header => :(header = String(data[pos:p-1])),
-    :seqline => :(append!(buffer, data[pos:p-1])),
+    :seqline => :(append!(seqbuffer, data[pos:p-1])),
 
     # Only this action is different from before!
     :record => quote
-        seq = Seq(header, String(buffer))
+        seq = Seq(header, String(seqbuffer))
         found_sequence = true
-        p -= 1
+        # Reset p one byte if we're not at the end
+        p -= !(is_eof && p > p_end)
         @escape
     end
 )
 ```
 
-`@escape` is not actually a real macro, but Automa's compiler will parse it and replace it with the proper code to break out of the executing machine,
-regardless of what kind of machine we have.
+`@escape` is not actually a real macro, but what Automa calls a "pseudomacro".
+It is expanded during Automa's own compiler pass _before_ Julia's lowering.
+The `@escape` pseudomacro is replaced with code that breaks it out of the executing machine, without reaching EOF or an invalid byte.
 
 Let's see how I use `generate_reader`, then I will explain each part:
 
@@ -137,24 +147,17 @@ generate_reader(
     machine;
     actions=actions,
     initcode=quote
-        buffer = UInt8[]
+        seqbuffer = UInt8[]
         pos = 0
         found_sequence = false
         header = ""
-        local seq
     end,
     loopcode=quote
-        found_sequence && @goto __return__
-    end,
-    returncode=quote
-        if cs < 0
-            error("Malformed FASTA file")
-        elseif found_sequence
-            return seq
-        else
-            return nothing
+        if (is_eof && p > p_end) || found_sequence
+            @goto __return__
         end
-    end
+    end,
+    returncode=:(found_sequence ? seq : nothing)
 ) |> eval
 ```
 
@@ -165,7 +168,8 @@ In the `:record`, action, a few new things happen.
   Instead, in the _loop code_, which executes after the buffer has been flushed, I check for this flag, and goes to `__return__` if necessary.
   I could also just return directly in the loopcode, but I prefer only having one place to retun from the function.
 * I use `@escape` to break out of the machine, i.e. stop machine execution
-* Finally, I decrement `p`. This is because, the first record ends when the IO reads the second `>` symbol.
+* Finally, I decrement `p`, if and only if the machine has not reached EOF (which happens when `is_eof` is true, meaning the last part of the IO has been buffered, and `p > p_end`, meaning the end of the buffer has been reached).
+  This is because, the first record ends when the IO reads the second `>` symbol.
   If I then were to read another record from the same IO, I would have already read the `>` symbol.
   I need to reset `p` by 1, so the `>` is also read on the next call to `read_record`.
 
@@ -186,7 +190,7 @@ julia>
 ```
 
 ## Preserving data by marking the buffer
-There is a problem with the implementation above: The following code in my actions dict:
+There are several problems with the implementation above: The following code in my actions dict:
 
 ```julia
 header = String(data[pos:p-1])
@@ -203,8 +207,8 @@ I then try to access `data[2:13]`, which is out of bounds!
 
 Luckily, the buffers of `TranscodingStreams` allow us to "mark" a position to save it.
 The buffer will not discard the marked position, or any position after the marked position.
-Inside the function generated by `generate_reader`, we can use the zero-argument macro `@mark`, which marks the position `p`.
-The macro `@markpos` can then be used to get the marked position, even if its value has been moved by the buffer.
+Inside the function generated by `generate_reader`, we can use the zero-argument pseudomacro `@mark()`, which marks the position `p`.
+The macro `@markpos()` can then be used to get the marked position, even if its value has been moved by the buffer.
 This works because the mark is stored inside the `TranscodingStream` buffer, and the buffer makes sure to update the mark if the content moves.
 Hence, we can re-write the actions:
 
@@ -248,3 +252,16 @@ p = 9            ^
 ```
 
 And so everything works.
+
+There are several more pseudomacros, all which handle the buffer in IO-parsers:
+
+```@docs
+Automa.@escape
+Automa.@mark
+Automa.@unmark
+Automa.@markpos
+Automa.@bufferpos
+Automa.@relpos
+Automa.@abspos
+Automa.@setbuffer
+```

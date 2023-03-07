@@ -25,7 +25,7 @@ So, it is idiomatic to compile the regex in the same `let` statement it is being
 machine = let
     header = re"[a-z]+"
     seqline = re"[ACGT]+"
-    record = re">" * header * re"\n" * rep1(seqline * re"\n")
+    record = re">" * header * '\n' * rep1(seqline * '\n')
     compile(rep(record))
 end
 ```
@@ -85,3 +85,8 @@ julia> validate_io(">hello\nAC")
 
 Computing the column effectively requires buffering at least one line of the input.
 If you want to validate files with large lines such that buffering one line will take too much memory, set `report_col` to `false`, in which case the return value will be (byte, line).
+
+## Reference
+```@docs
+Automa.compile
+```

@@ -719,7 +719,7 @@ identifier_pos = @relpos(p)
 identifier = data[@abspos(identifier_pos):p]
 ```
 
-See also: [`abspos`](@ref)
+See also: [`@abspos`](@ref)
 """
 macro relpos(p)
     :($WARNING_STRING)
@@ -729,7 +729,7 @@ end
     abspos(p)
 
 Automa pseudomacro. Used to obtain the actual position of a relative position
-obtained from `@relpos`. See `@relpos` for more details.
+obtained from `@relpos`. See [`@relpos`](@ref) for more details.
 """
 macro abspos(p)
     :($WARNING_STRING)
@@ -751,7 +751,7 @@ description = sub_parser(stream)
 p = @bufferpos()
 ```
 
-See also: [`@setbuffer`](@ref)
+See also: [`@bufferpos`](@ref)
 """
 macro setbuffer()
     :($WARNING_STRING)

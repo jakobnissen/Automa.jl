@@ -1,7 +1,8 @@
 # Debugging Automa
 
-__WARNING:__ All Automa's debugging tools are NOT part of the API and are subject to change without warning.
-You can use them during development, but do NOT rely on their behaviour in your final code.
+!!! danger 
+    All Automa's debugging tools are NOT part of the API and are subject to change without warning.
+    You can use them during development, but do NOT rely on their behaviour in your final code.
 
 Automa is a complicated package, and the process of indirectly designing parsers by first designing a machine can be error prone.
 Therefore, it's crucial to have good debugging tooling.
@@ -17,8 +18,7 @@ For example:
 ```julia
 machine = let
     alphabet = re"BC"
-    band = re"BBA"
-    band.actions[:enter] = [:cool_band]
+    band = onenter!(re"BBA", :cool_band)
     compile(re"XYZ A" * (alphabet | band))
 end
 ```
@@ -40,10 +40,9 @@ In the example above, the error was obvious, but consider this example:
 fasta_machine = let
     header = re"[a-z]+"
     seq_line = re"[ACGT]+"
-    sequence = seq_line * RE.rep(re"\n" * seq_line)
-    record = re">" * header * re"\n" * sequence
-    record.actions[:exit] = [:emit_record]
-    Automa.compile(RE.rep(record * re"\n") * RE.opt(record))
+    sequence = seq_line * rep('\n' * seq_line)
+    record = onexit!('>' * header * '\n' * sequence, :emit_record)
+    compile(rep(record * '\n') * opt(record))
 end
 ```
 
@@ -61,13 +60,12 @@ So, really, your machine should regex similar to this
 fasta_machine = let
     header = re"[a-z]+"
     seq_line = re"[ACGT]+"
-    sequence = RE.rep1(seq_line * re"\n")
-    record = re">" * header * re"\n" * sequence
-    record.actions[:exit] = [:emit_record]
+    sequence = rep1(seq_line * '\n')
+    record = onexit!('>' * header * '\n' * sequence, :emit_record)
 
     # A special record that can avoid a trailing newline, but ONLY if it's the last record
-    record_eof = re">" * header * re"\n" * seq_line * RE.rep(re"\n" * seq_line) * RE.opt(re"\n")
-    Automa.compile(RE.rep(record * re"\n") * RE.opt(record_eof))
+    record_eof = '>' * header * '\n' * seq_line * rep('\n' * seq_line) * opt('\n')
+    compile(rep(record * '\n') * opt(record_eof))
 end
 ```
 
@@ -132,11 +130,8 @@ The function of `create_debug_function(::Machine; ascii=false)` is best demonstr
 
 ```julia
 machine = let
-    letters = re"[a-z]+"
-    letters.actions[:enter] = [:enter_letters]
-    regex = letters * re",[0-9]," * letters
-    regex.actions[:exit] = [:exiting_regex]
-    Automa.compile(regex)
+    letters = onenter!(re"[a-z]+", :enter_letters)
+    compile(onexit!(letters * re",[0-9]," * letters, :exiting_regex))
 end
 eval(create_debug_function(machine; ascii=true))
 (end_state, transitions) = debug_compile("abc,5,d!")
@@ -147,7 +142,7 @@ transitions
 Will create the following output:
 ```
 end state = -6
-9-element Vector{Tuple{Char, Int64, Vector{Symbol}}}:
+7-element Vector{Tuple{Char, Int64, Vector{Symbol}}}:
  ('a', 2, [:enter_letters])
  ('b', 2, [])
  ('c', 2, [])
@@ -155,8 +150,6 @@ end state = -6
  ('5', 4, [])
  (',', 5, [])
  ('d', 6, [:enter_letters])
- ('e', 6, [])
- ('f', 6, [:exiting_regex])
 ```
 
 Where each 3-tuple in the input corresponds to the input byte (displayed as a `Char` if `ascii` is set to `true`), the Automa state reached on reading the letter, and the actions executed.

@@ -51,3 +51,8 @@ fasta_regex = let
     rep(record)
 end
 ```
+
+## Reference
+```@docs
+Automa.RE
+```
