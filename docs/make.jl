@@ -1,8 +1,9 @@
 using Documenter
 using TranscodingStreams # to load extension
 using Automa
+Automa.generate_io_validator
 
-include("make_pngs.jl")
+#include("make_pngs.jl")
 
 makedocs(
     sitename = "Automa.jl",
@@ -11,6 +12,8 @@ makedocs(
         "Home" => "index.md",
         "Theory" => "theory.md",
         "Regex" => "regex.md",
+        "Validators" => "validators.md",
+        "Tokenizers" => "tokenizer.md",
         "References" => "references.md"
         ],
     format = Documenter.HTML(

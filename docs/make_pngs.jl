@@ -1,6 +1,7 @@
 using Automa
 
 DIR = joinpath(dirname(dirname(Base.pathof(Automa))), "docs/src/figure")
+ispath(DIR) || mkdir(DIR)
 
 function regex_png(regex, path)
     open("/tmp/re.dot", "w") do io
