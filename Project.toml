@@ -8,12 +8,6 @@ ScanByte = "7b38b023-a4d7-4c5e-8d43-3f3097f304eb"
 SnoopPrecompile = "66db9d55-30c0-4569-8b51-7e840670fc0c"
 TranscodingStreams = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
 
-[weakdeps]
-TranscodingStreams = "3bb67fe8-82b1-5028-8e26-92a6c54297fa"
-
-[extensions]
-AutomaStream = "TranscodingStreams"
-
 [compat]
 ScanByte = "0.3.3"
 SnoopPrecompile = "1"
