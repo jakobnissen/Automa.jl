@@ -209,7 +209,7 @@ function validate_paths(
 
                 # If the FSM may disambiguate the two edges based on preconditions
                 # there is no conflict (or, rather, we can't prove a conflict.
-                has_potentially_conflicting_precond(edge1, edge2) && continue
+                has_disambiguating_cond(edge1, edge2) && continue
             end
 
             # Now we know there is an ambiguity, so we just need to create

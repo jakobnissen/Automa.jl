@@ -53,23 +53,24 @@ function in_sort_order(e1::Edge, e2::Edge)
     error()
 end
 
-"""Check if two edges have preconditions that could be disambiguating.
-I.e. can an FSM distinguish the edges based on their conditions?
+"""Check if two edges have preconditions that will be disambiguating,
+i.e. if the conditions on the edges are such that a machine can never take
+both edges, and therefore they cannot give rise to an ambiguous DFA.
 """
-function has_potentially_conflicting_precond(e1::Edge, e2::Edge)
-    # This is true for most edges, to check it first
-    isempty(e1.precond.names) && isempty(e2.precond.names) && return false
+function has_disambiguating_cond(e1::Edge, e2::Edge)
+    (isempty(e1.precond.names) || isempty(e2.precond.names)) && return false
 
-    symbols = union(Set(e1.precond.names), Set(e2.precond.names))
-    for symbol in symbols
+    for symbol in intersect(Set(e1.precond.names), Set(e2.precond.names))
         v1 = e1.precond[symbol]
         v2 = e2.precond[symbol]
 
         # NONE means the edge can never be taken, so they are trivially disambiguated
         (v1 == NONE || v2 == NONE) && return true
 
-        # If they are the same, they cannot be used to distinguish
-        v1 == v2 || return true
+        # If one is true and the other is false, these edges cannot be taken
+        # at the same time, so they are disambiguated
+        (v1 == TRUE && v2 == FALSE) && return true
+        (v1 == FALSE && v2 == TRUE) && return true
     end
     return false
 end
